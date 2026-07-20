@@ -1,0 +1,24 @@
+services:
+  monitor:
+    build: .
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_PATH: /app/data/idx-alerts.sqlite
+      BROWSER_PROFILE_PATH: /app/browser-profile
+      KEYWORDS_PATH: /app/config/keywords.json
+      TZ: Asia/Jakarta
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - idx-data:/app/data
+      - idx-browser-profile:/app/browser-profile
+      - ./config/keywords.json:/app/config/keywords.json:ro
+    shm_size: "256mb"
+
+volumes:
+  idx-data:
+  idx-browser-profile:

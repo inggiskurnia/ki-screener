@@ -1,0 +1,8 @@
+node_modules
+dist
+.git
+.env
+data
+browser-profile
+test-results
+playwright-report
