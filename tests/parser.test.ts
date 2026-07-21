@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { detectChallenge, PageChallengeError, PageParseError, parseIdxPage, parseIdxPublishedAt } from "../src/parser.js";
+import { detectChallenge, PageChallengeError, parseIdxPage, parseIdxPublishedAt } from "../src/parser.js";
 
 const fixture = readFileSync(new URL("./fixtures/disclosures.html", import.meta.url), "utf8");
 
@@ -9,6 +9,7 @@ describe("IDX parser", () => {
     const parsed = parseIdxPage(fixture, "https://www.idx.co.id/id/perusahaan-tercatat/keterbukaan-informasi");
     expect(parsed.records).toHaveLength(3);
     expect(parsed.malformedCount).toBe(1);
+    expect(parsed.malformedReasons).toEqual(["Could not isolate disclosure container"]);
     expect(parsed.records[0]).toMatchObject({
       ticker: "WISL",
       publishedAt: "2026-07-20T10:32:28+07:00",
@@ -30,6 +31,18 @@ describe("IDX parser", () => {
 
   it("rejects challenge pages and empty pages", () => {
     expect(() => detectChallenge("<title>Attention Required! | Cloudflare</title>")).toThrow(PageChallengeError);
-    expect(() => parseIdxPage("<main></main>", "https://www.idx.co.id/")).toThrow(PageParseError);
+    expect(() => parseIdxPage("<main></main>", "https://www.idx.co.id/")).toThrow(
+      "No valid disclosures were found in the rendered IDX page (0 timestamp candidates)."
+    );
+  });
+
+  it("reports the underlying reasons when every disclosure is malformed", () => {
+    const malformed = `
+      <main><section><time>today</time><h6><a href="/notice.pdf">Notice [TEST]</a></h6></section></main>
+    `;
+    expect(() => parseIdxPage(malformed, "https://www.idx.co.id/")).toThrow(
+      "No valid disclosures were found in the rendered IDX page (1 timestamp candidates). " +
+      "First errors: Unrecognized IDX timestamp: today"
+    );
   });
 });

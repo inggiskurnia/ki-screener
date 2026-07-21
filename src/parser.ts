@@ -40,6 +40,7 @@ function tickerFromTitle(title: string): string | undefined {
 export interface ParsedPage {
   records: Disclosure[];
   malformedCount: number;
+  malformedReasons: string[];
 }
 
 export function detectChallenge(html: string): void {
@@ -60,6 +61,7 @@ export function parseIdxPage(html: string, pageUrl: string): ParsedPage {
   const $ = load(html);
   const records: Disclosure[] = [];
   let malformedCount = 0;
+  const malformedReasons: string[] = [];
 
   $("main time").each((_index, element) => {
     try {
@@ -100,13 +102,20 @@ export function parseIdxPage(html: string, pageUrl: string): ParsedPage {
         primaryUrl,
         attachments
       });
-    } catch {
+    } catch (error) {
       malformedCount += 1;
+      if (malformedReasons.length < 3) {
+        malformedReasons.push(error instanceof Error ? error.message : String(error));
+      }
     }
   });
 
   if (records.length === 0) {
-    throw new PageParseError("No valid disclosures were found in the rendered IDX page");
+    const candidateCount = $("main time").length;
+    const reasons = malformedReasons.length > 0 ? ` First errors: ${malformedReasons.join("; ")}` : "";
+    throw new PageParseError(
+      `No valid disclosures were found in the rendered IDX page (${candidateCount} timestamp candidates).${reasons}`
+    );
   }
-  return { records, malformedCount };
+  return { records, malformedCount, malformedReasons };
 }

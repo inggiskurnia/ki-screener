@@ -52,13 +52,53 @@ export class PlaywrightIdxSource implements DisclosureSource {
     if (page.url() === this.options.url) await page.reload({ waitUntil: "domcontentloaded", timeout: 45_000 });
     else await page.goto(this.options.url, { waitUntil: "domcontentloaded", timeout: 45_000 });
     try {
-      await page.locator("main time").first().waitFor({ state: "visible", timeout: 30_000 });
-      await page.locator("main h6 a[href]").first().waitFor({ state: "visible", timeout: 30_000 });
+      await this.waitForStableDisclosureList(page, undefined, 30_000);
     } catch (error) {
       detectChallenge(await page.content());
       const title = (await page.title()).trim() || "untitled page";
       throw new PageParseError(`IDX disclosure list did not render (page title: ${title}): ${errorMessage(error)}`);
     }
+  }
+
+  private async disclosureSignature(page: Page): Promise<string | undefined> {
+    return page.evaluate(() => {
+      const entries: string[][] = [];
+      for (const time of Array.from(document.querySelectorAll("main time"))) {
+        let container = time.parentElement;
+        while (container && container.querySelectorAll("h6").length === 0) container = container.parentElement;
+        if (!container || container.tagName === "MAIN" || container.querySelectorAll("time").length !== 1) continue;
+        const anchor = container.querySelector("h6 a[href]") as HTMLAnchorElement | null;
+        const label = time.textContent?.replace(/\s+/g, " ").trim();
+        if (anchor?.href && label) entries.push([label, anchor.href]);
+      }
+      return entries.length > 0 ? JSON.stringify(entries) : undefined;
+    });
+  }
+
+  private async waitForStableDisclosureList(
+    page: Page,
+    previousSignature: string | undefined,
+    timeoutMs: number
+  ): Promise<string> {
+    const deadline = Date.now() + timeoutMs;
+    let lastSignature: string | undefined;
+    let consecutiveMatches = 0;
+
+    while (Date.now() < deadline) {
+      const signature = await this.disclosureSignature(page);
+      if (signature && signature !== previousSignature) {
+        consecutiveMatches = signature === lastSignature ? consecutiveMatches + 1 : 1;
+        lastSignature = signature;
+        if (consecutiveMatches >= 2) return signature;
+      } else {
+        consecutiveMatches = 0;
+        lastSignature = signature;
+      }
+      await page.waitForTimeout(250);
+    }
+
+    detectChallenge(await page.content());
+    throw new PageParseError("IDX disclosure list did not become complete and stable before the timeout");
   }
 
   private async fetchOnce(knownFingerprints: ReadonlySet<string>, pageLimit: number): Promise<FetchResult> {
@@ -69,6 +109,7 @@ export class PlaywrightIdxSource implements DisclosureSource {
       const collectedFingerprints = new Set<string>();
       let reachedKnownRecord = false;
       let pagesVisited = 0;
+      let pageSignature = await this.disclosureSignature(page);
 
       for (let pageNumber = 1; pageNumber <= pageLimit; pageNumber += 1) {
         pagesVisited = pageNumber;
@@ -87,13 +128,9 @@ export class PlaywrightIdxSource implements DisclosureSource {
 
         const next = page.locator('button[aria-label="Go to next page"]');
         if (await next.count() !== 1 || await next.isDisabled()) break;
-        const previousFirstTimestamp = await page.locator("main time").first().textContent();
+        const previousSignature = pageSignature;
         await next.click();
-        await page.waitForFunction(
-          (previous) => document.querySelector("main time")?.textContent !== previous,
-          previousFirstTimestamp,
-          { timeout: 20_000 }
-        );
+        pageSignature = await this.waitForStableDisclosureList(page, previousSignature, 20_000);
       }
 
       const newestPublishedAt = collected[0]?.publishedAt;
