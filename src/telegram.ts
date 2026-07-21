@@ -8,7 +8,7 @@ export function escapeTelegramHtml(value: string): string {
 }
 
 function safeLink(url: string): string {
-  return escapeTelegramHtml(encodeURI(url));
+  return escapeTelegramHtml(url);
 }
 
 export function formatDisclosureMessage(disclosure: Disclosure, keyword: string): string {

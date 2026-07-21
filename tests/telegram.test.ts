@@ -28,6 +28,13 @@ describe("Telegram messages", () => {
     expect(message).not.toContain("A & B <Material>");
   });
 
+  it("does not double-encode an already encoded IDX document URL", () => {
+    const primaryUrl = "https://www.idx.co.id/StaticData/Exchange/Peng-Batas%20Akhir%20Perdagangan.pdf";
+    const message = formatDisclosureMessage({ ...disclosure, primaryUrl }, "material");
+    expect(message).toContain(`href="${primaryUrl}"`);
+    expect(message).not.toContain("%2520");
+  });
+
   it("retries a partial API failure and eventually succeeds", async () => {
     let requests = 0;
     const server = createServer((_request, response) => {
